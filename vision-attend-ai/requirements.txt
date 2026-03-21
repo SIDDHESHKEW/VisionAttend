@@ -2,9 +2,10 @@ fastapi
 uvicorn[standard]
 opencv-python
 numpy
-insightface
+deepface
 pillow
 onnxruntime
 scikit-learn
 python-multipart
 requests
+tf-keras
