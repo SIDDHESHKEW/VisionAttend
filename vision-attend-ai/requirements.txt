@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+opencv-python
+numpy
+insightface
+pillow
+onnxruntime
+scikit-learn
+python-multipart
+requests
