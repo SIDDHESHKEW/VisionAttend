@@ -4,6 +4,8 @@ import roleMiddleware from "../middleware/roleMiddleware.js";
 import upload from "../middleware/uploadMiddleware.js";
 import {
   markAttendance,
+  previewAttendance,
+  markFinalAttendance,
   getAttendanceReport,
   getMyAttendance,
   exportAttendance,
@@ -11,32 +13,15 @@ import {
 
 const router = express.Router();
 
-// POST /api/attendance/mark — teacher/admin only
-router.post(
-  "/mark",
-  authMiddleware,
-  roleMiddleware(["teacher", "admin"]),
-  upload.single("image"),
-  markAttendance
-);
-
-// GET /api/attendance/report?subject=Math&date=2026-03-21
-router.get(
-  "/report",
-  authMiddleware,
-  roleMiddleware(["teacher", "admin"]),
-  getAttendanceReport
-);
-
-// GET /api/attendance/export?subject=Math&date=2026-03-21
-router.get(
-  "/export",
-  authMiddleware,
-  roleMiddleware(["teacher", "admin"]),
-  exportAttendance
-);
-
-// GET /api/attendance/my — student views own records
-router.get("/my", authMiddleware, getMyAttendance);
+// Preview (no DB save)
+router.post("/preview",    authMiddleware, roleMiddleware(["teacher","admin"]), upload.single("image"), previewAttendance);
+// Mark final (after teacher verifies)
+router.post("/mark-final", authMiddleware, roleMiddleware(["teacher","admin"]), markFinalAttendance);
+// Legacy direct mark
+router.post("/mark",       authMiddleware, roleMiddleware(["teacher","admin"]), upload.single("image"), markAttendance);
+// Reports
+router.get("/report",      authMiddleware, roleMiddleware(["teacher","admin"]), getAttendanceReport);
+router.get("/export",      authMiddleware, roleMiddleware(["teacher","admin"]), exportAttendance);
+router.get("/my",          authMiddleware, getMyAttendance);
 
 export default router;

@@ -15,8 +15,7 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     try {
       const res = await API.post("/auth/login", form);
       const { token, user } = res.data;
@@ -25,11 +24,10 @@ const Login = () => {
       localStorage.setItem("role",  user.role);
       localStorage.setItem("user",  JSON.stringify(user));
 
-      if (user.role === "teacher" || user.role === "admin") {
-        navigate("/teacher");
-      } else {
-        navigate("/student");
-      }
+      if (user.role === "admin")         navigate("/admin");
+      else if (user.role === "teacher")  navigate("/teacher");
+      else                               navigate("/student");
+
     } catch (err) {
       setError(err.response?.data?.message || "Login failed. Please try again.");
     } finally {
@@ -61,7 +59,7 @@ const Login = () => {
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl mb-5 flex items-center gap-2">
-              <span>⚠️</span> {error}
+              ⚠️ {error}
             </div>
           )}
 
@@ -74,7 +72,7 @@ const Login = () => {
               <label className="block text-sm font-medium text-gray-600 mb-1.5">Password</label>
               <input name="password" type="password" placeholder="••••••••" value={form.password} onChange={handleChange} className="input-field" required />
             </div>
-            <button type="submit" disabled={loading} className="w-full btn-primary py-3 text-base mt-2 disabled:opacity-60 disabled:cursor-not-allowed">
+            <button type="submit" disabled={loading} className="w-full btn-primary py-3 text-base mt-2 disabled:opacity-60">
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">

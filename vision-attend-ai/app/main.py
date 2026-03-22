@@ -2,16 +2,21 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-import numpy as np
 
 from app.utils import decode_base64_image
-from app.face_service import load_model, extract_embeddings, match_faces
+from app.face_service import (
+    load_model,
+    extract_embeddings,
+    match_faces,
+    get_engine_info,
+    SIMILARITY_THRESHOLD,
+)
 
-# ─── App Setup ────────────────────────────────────────────────────────────────
+# ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="VisionAttend AI Service",
-    description="Face recognition microservice for attendance marking",
-    version="1.0.0"
+    description="Multi-face classroom attendance recognition",
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -21,121 +26,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Pydantic Models ──────────────────────────────────────────────────────────
-
+# ─── Models ───────────────────────────────────────────────────────────────────
 class StudentRecord(BaseModel):
     id: str
-    embedding: Optional[List[float]] = None  # None if not registered yet
-
+    embedding: Optional[List[float]] = None
 
 class RecognizeRequest(BaseModel):
-    image: str                          # Base64 encoded classroom image
-    students: List[StudentRecord]       # All students from DB
-    threshold: Optional[float] = 0.5   # Similarity threshold
-
+    image: str
+    students: List[StudentRecord]
+    threshold: Optional[float] = SIMILARITY_THRESHOLD
 
 class RecognizeResponse(BaseModel):
     matchedStudents: List[dict]
     totalDetected: int
     totalMatched: int
-
+    engine: str
 
 class EmbedRequest(BaseModel):
-    image: str   # Base64 face image for registration
-
+    image: str
 
 class EmbedResponse(BaseModel):
     embedding: List[float]
     facesDetected: int
+    engine: str
 
-
-# ─── Startup: preload model ───────────────────────────────────────────────────
+# ─── Startup ──────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 VisionAttend AI Service starting...")
+    print("\n🚀 VisionAttend AI Service v2.0 starting...")
     load_model()
-    print("✅ AI Service Ready")
+    info = get_engine_info()
+    print(f"✅ AI Service Ready | Engine: {info['engine']} | Threshold: {info['threshold']}\n")
 
-
-# ─── Health Check ─────────────────────────────────────────────────────────────
+# ─── Health ───────────────────────────────────────────────────────────────────
 @app.get("/")
 def health_check():
+    info = get_engine_info()
     return {
-        "status":  "running",
-        "service": "VisionAttend AI",
-        "version": "1.0.0"
+        "status":    "running",
+        "service":   "VisionAttend AI",
+        "version":   "2.0.0",
+        "engine":    info["engine"],
+        "threshold": info["threshold"],
     }
-
-
-# ─── POST /recognize ──────────────────────────────────────────────────────────
-@app.post("/recognize", response_model=RecognizeResponse)
-async def recognize(request: RecognizeRequest):
-    """
-    Detect faces in a classroom image and match against stored student embeddings.
-
-    Flow:
-    1. Decode base64 image
-    2. Extract face embeddings from classroom photo
-    3. Match each face against stored student embeddings
-    4. Return matched student IDs
-    """
-    try:
-        # 1. Decode image
-        image = decode_base64_image(request.image)
-
-        # 2. Extract embeddings from classroom photo
-        detected = extract_embeddings(image)
-
-        if not detected:
-            return RecognizeResponse(
-                matchedStudents=[],
-                totalDetected=0,
-                totalMatched=0
-            )
-
-        # 3. Filter students who have embeddings registered
-        students_with_embeddings = [
-            {"id": s.id, "embedding": s.embedding}
-            for s in request.students
-            if s.embedding is not None
-        ]
-
-        if not students_with_embeddings:
-            return RecognizeResponse(
-                matchedStudents=[],
-                totalDetected=len(detected),
-                totalMatched=0
-            )
-
-        # 4. Match faces
-        matched = match_faces(
-            detected_embeddings=detected,
-            stored_students=students_with_embeddings,
-            threshold=request.threshold
-        )
-
-        return RecognizeResponse(
-            matchedStudents=matched,
-            totalDetected=len(detected),
-            totalMatched=len(matched)
-        )
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        print(f"❌ Recognition error: {e}")
-        raise HTTPException(status_code=500, detail=f"Recognition failed: {str(e)}")
-
 
 # ─── POST /embed ──────────────────────────────────────────────────────────────
 @app.post("/embed", response_model=EmbedResponse)
 async def embed(request: EmbedRequest):
-    """
-    Extract face embedding from a single face image.
-    Used during student face registration (Phase 3).
-
-    Returns a 512-dimensional embedding vector to store in DB.
-    """
+    """Extract face embedding for student registration."""
     try:
         image    = decode_base64_image(request.image)
         detected = extract_embeddings(image)
@@ -143,21 +81,79 @@ async def embed(request: EmbedRequest):
         if not detected:
             raise HTTPException(
                 status_code=400,
-                detail="No face detected in image. Please use a clear, front-facing photo."
+                detail="No face detected — adjust lighting or move closer to camera."
             )
 
-        # Use the highest-confidence face if multiple detected
-        best_face = max(detected, key=lambda f: f["det_score"])
+        # Use highest-confidence face
+        best = max(detected, key=lambda f: f["det_score"])
+        info = get_engine_info()
 
         return EmbedResponse(
-            embedding=best_face["embedding"],
-            facesDetected=len(detected)
+            embedding=best["embedding"],
+            facesDetected=len(detected),
+            engine=info["engine"],
         )
 
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        print(f"❌ Embedding error: {e}")
+        print(f"❌ Embed error: {e}")
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+
+
+# ─── POST /recognize ──────────────────────────────────────────────────────────
+@app.post("/recognize", response_model=RecognizeResponse)
+async def recognize(request: RecognizeRequest):
+    """
+    Detect ALL faces in classroom image and match against stored embeddings.
+    Supports 30-50 faces in a single image.
+    """
+    try:
+        print(f"\n📸 /recognize — {len(request.students)} students to match against")
+        image    = decode_base64_image(request.image)
+        detected = extract_embeddings(image)
+
+        if not detected:
+            info = get_engine_info()
+            return RecognizeResponse(
+                matchedStudents=[],
+                totalDetected=0,
+                totalMatched=0,
+                engine=info["engine"],
+            )
+
+        # Filter students with valid embeddings
+        students_with_embeddings = [
+            {"id": s.id, "embedding": s.embedding}
+            for s in request.students
+            if s.embedding is not None and len(s.embedding) > 0
+        ]
+
+        print(f"👥 {len(students_with_embeddings)}/{len(request.students)} students have embeddings")
+
+        if not students_with_embeddings:
+            info = get_engine_info()
+            return RecognizeResponse(
+                matchedStudents=[],
+                totalDetected=len(detected),
+                totalMatched=0,
+                engine=info["engine"],
+            )
+
+        matched = match_faces(
+            detected_embeddings=detected,
+            stored_students=students_with_embeddings,
+            threshold=request.threshold,
+        )
+
+        info = get_engine_info()
+        return RecognizeResponse(
+            matchedStudents=matched,
+            totalDetected=len(detected),
+            totalMatched=len(matched),
+            engine=info["engine"],
+        )
+
+    except Exception as e:
+        print(f"❌ Recognize error: {e}")
+        raise HTTPException(status_code=500, detail=f"Recognition failed: {str(e)}")

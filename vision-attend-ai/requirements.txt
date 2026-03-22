@@ -9,3 +9,11 @@ scikit-learn
 python-multipart
 requests
 tf-keras
+
+# Optional: Install InsightFace for better multi-face detection
+# Requires Microsoft C++ Build Tools on Windows:
+# https://visualstudio.microsoft.com/visual-cpp-build-tools/
+# After installing Build Tools, run:
+#   pip install insightface
+# The system auto-detects and uses InsightFace if available,
+# falls back to DeepFace automatically.
