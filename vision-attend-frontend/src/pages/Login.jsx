@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { Eye, EyeOff } from "lucide-react";
 import API from "../services/api";
 
 const Login = () => {
   const navigate = useNavigate();
-  const [form, setForm]       = useState({ email: "", password: "" });
-  const [error, setError]     = useState("");
-  const [loading, setLoading] = useState(false);
+  const [form, setForm]         = useState({ email: "", password: "" });
+  const [showPass, setShowPass] = useState(false);
+  const [error, setError]       = useState("");
+  const [loading, setLoading]   = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -40,6 +42,7 @@ const Login = () => {
       </div>
 
       <div className="w-full max-w-md relative">
+        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white/10 backdrop-blur rounded-2xl mb-4 border border-white/20">
             <span className="text-3xl">🎓</span>
@@ -55,8 +58,8 @@ const Login = () => {
           <p className="text-gray-400 text-sm mb-6">Sign in to your account</p>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl mb-5">
-              ⚠️ {error}
+            <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl mb-5 flex items-center gap-2">
+              <span className="shrink-0">⚠️</span> {error}
             </div>
           )}
 
@@ -68,8 +71,15 @@ const Login = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1.5">Password</label>
-              <input name="password" type="password" placeholder="••••••••"
-                value={form.password} onChange={handleChange} className="input-field" required />
+              <div className="relative">
+                <input name="password" type={showPass ? "text" : "password"}
+                  placeholder="••••••••" value={form.password} onChange={handleChange}
+                  className="input-field pr-10" required />
+                <button type="button" onClick={() => setShowPass(!showPass)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
             <button type="submit" disabled={loading}
               className="w-full btn-primary py-3 text-base mt-2 disabled:opacity-60 disabled:cursor-not-allowed">
@@ -90,7 +100,6 @@ const Login = () => {
             <Link to="/register" className="text-primary font-semibold hover:underline">Register</Link>
           </p>
         </div>
-
         <p className="text-center text-xs text-blue-200/60 mt-6">Created by Siddhesh Kewate, IBM Btech</p>
       </div>
     </div>

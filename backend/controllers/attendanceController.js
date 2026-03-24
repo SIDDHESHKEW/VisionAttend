@@ -22,13 +22,9 @@ export const previewAttendance = async (req, res) => {
         similarity: matched.find((m) => m.studentId === s.id)?.similarity || 0,
       }));
 
-    const allStudentsList = allStudents.map((s) => ({
-      id: s.id, name: s.name, rollNumber: s.rollNumber || "—",
-    }));
-
     return res.status(200).json({
       detectedStudents,
-      allStudents: allStudentsList,
+      allStudents: allStudents.map((s) => ({ id: s.id, name: s.name, rollNumber: s.rollNumber || "—" })),
       totalStudents: allStudents.length,
       imagePath,
     });
@@ -38,7 +34,7 @@ export const previewAttendance = async (req, res) => {
   }
 };
 
-// ─── MARK FINAL (teacher verified) ───────────────────────────────────────────
+// ─── MARK FINAL (teacher verified) — SAFE UPSERT ────────────────────────────
 export const markFinalAttendance = async (req, res) => {
   try {
     const { presentStudentIds, subject } = req.body;
@@ -48,21 +44,29 @@ export const markFinalAttendance = async (req, res) => {
     const today       = new Date().toISOString().split("T")[0];
     const allStudents = await User.findAll({ where: { role: "student" } });
 
-    await Attendance.destroy({ where: { subject, date: today } });
+    // ── SAFE UPSERT — never silently overwrite existing records ──────────────
+    for (const student of allStudents) {
+      const newStatus = presentStudentIds.includes(student.id) ? "Present" : "Absent";
+      const existing  = await Attendance.findOne({
+        where: { studentId: student.id, subject, date: today },
+      });
+      if (existing) {
+        if (existing.status !== newStatus) {
+          await existing.update({ status: newStatus });
+        }
+      } else {
+        await Attendance.create({ studentId: student.id, subject, date: today, status: newStatus });
+      }
+    }
 
-    const records = allStudents.map((s) => ({
-      studentId: s.id, subject, date: today,
-      status: presentStudentIds.includes(s.id) ? "Present" : "Absent",
-    }));
-
-    await Attendance.bulkCreate(records);
-
+    const records      = await Attendance.findAll({ where: { subject, date: today } });
     const presentCount = records.filter((r) => r.status === "Present").length;
-    console.log(`✅ FINAL — Present: ${presentCount} | Absent: ${allStudents.length - presentCount}`);
+    console.log(`✅ Attendance saved — Present: ${presentCount} | Absent: ${allStudents.length - presentCount}`);
 
     return res.status(200).json({
       message: "Attendance marked", date: today, subject,
-      total: allStudents.length, present: presentCount, absent: allStudents.length - presentCount,
+      total: allStudents.length, present: presentCount,
+      absent: allStudents.length - presentCount,
     });
   } catch (error) {
     console.error("markFinalAttendance error:", error);
@@ -70,7 +74,7 @@ export const markFinalAttendance = async (req, res) => {
   }
 };
 
-// ─── DIRECT MARK (legacy) ────────────────────────────────────────────────────
+// ─── DIRECT MARK (legacy) — SAFE UPSERT ──────────────────────────────────────
 export const markAttendance = async (req, res) => {
   try {
     const { subject } = req.body;
@@ -83,16 +87,21 @@ export const markAttendance = async (req, res) => {
     const matched     = await recognizeFacesFromClassImage(imagePath, allStudents);
     const detectedIds = matched.map((m) => m.studentId);
 
-    await Attendance.destroy({ where: { subject, date: today } });
+    for (const student of allStudents) {
+      const newStatus = detectedIds.includes(student.id) ? "Present" : "Absent";
+      const existing  = await Attendance.findOne({
+        where: { studentId: student.id, subject, date: today },
+      });
+      if (existing) {
+        if (existing.status !== newStatus) await existing.update({ status: newStatus });
+      } else {
+        await Attendance.create({ studentId: student.id, subject, date: today, status: newStatus });
+      }
+    }
 
-    const records = allStudents.map((s) => ({
-      studentId: s.id, subject, date: today,
-      status: detectedIds.includes(s.id) ? "Present" : "Absent",
-    }));
-
-    await Attendance.bulkCreate(records);
-
+    const records      = await Attendance.findAll({ where: { subject, date: today } });
     const presentCount = records.filter((r) => r.status === "Present").length;
+
     return res.status(200).json({
       message: "Attendance marked", date: today, subject,
       total: allStudents.length, present: presentCount,
