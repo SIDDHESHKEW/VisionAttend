@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 
-const CameraCapture = ({ onCapture, minCaptures = 2, maxCaptures = 3 }) => {
+const CameraCapture = ({ onCapture, minCaptures = 1, maxCaptures = 3 }) => {
   const videoRef  = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -11,23 +11,18 @@ const CameraCapture = ({ onCapture, minCaptures = 2, maxCaptures = 3 }) => {
   const [validating, setValidating] = useState(false);
   const [faceStatus, setFaceStatus] = useState([]);
 
-  // ── Start camera at full 1280×720 ─────────────────────────────────────────
   const startCamera = async () => {
     setError("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width:      { ideal: 1280 },
-          height:     { ideal: 720  },
-          facingMode: "user",
-        },
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
       });
       streamRef.current          = stream;
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
       setCameraOn(true);
     } catch {
-      setError("Camera access denied. Please allow camera permissions and try again.");
+      setError("Camera access denied. Please allow camera permissions.");
     }
   };
 
@@ -39,7 +34,7 @@ const CameraCapture = ({ onCapture, minCaptures = 2, maxCaptures = 3 }) => {
     setCameraOn(false);
   };
 
-  // ── Capture full-resolution frame ─────────────────────────────────────────
+  // Manual capture only — NO auto-capture loops
   const capturePhoto = async () => {
     if (!videoRef.current || captures.length >= maxCaptures) return;
 
@@ -49,8 +44,7 @@ const CameraCapture = ({ onCapture, minCaptures = 2, maxCaptures = 3 }) => {
     canvas.height = videoRef.current.videoHeight || 720;
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
 
-    // High quality JPEG
-    const base64 = canvas.toDataURL("image/jpeg", 0.92).split(",")[1];
+    const base64 = canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
 
     setValidating(true);
     const hasFace = await checkFace(base64);
@@ -58,32 +52,23 @@ const CameraCapture = ({ onCapture, minCaptures = 2, maxCaptures = 3 }) => {
 
     const newCaptures   = [...captures, base64];
     const newFaceStatus = [...faceStatus, hasFace];
-
     setCaptures(newCaptures);
     setFaceStatus(newFaceStatus);
     onCapture(newCaptures, newFaceStatus);
-
-    setError(hasFace ? "" : "⚠️ No face detected. Try better lighting or move closer.");
+    setError(hasFace ? "" : "No face detected. Try better lighting or move closer.");
   };
 
-  // ── Validate with AI ──────────────────────────────────────────────────────
   const checkFace = async (base64) => {
     try {
       const res = await fetch("http://localhost:8000/embed", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ image: base64 }),
-        signal:  AbortSignal.timeout(10000),
+        body: JSON.stringify({ image: base64 }),
+        signal: AbortSignal.timeout(8000),
       });
-      if (res.ok) {
-        const data = await res.json();
-        console.log(`✅ Face detected (engine: ${data.engine})`);
-        return true;
-      }
-      return false;
+      return res.ok;
     } catch {
-      // AI not reachable — allow capture, validate later
-      return true;
+      return true; // allow if AI unreachable
     }
   };
 
@@ -103,14 +88,10 @@ const CameraCapture = ({ onCapture, minCaptures = 2, maxCaptures = 3 }) => {
 
   return (
     <div className="space-y-3">
-      {/* Video preview */}
       <div className="relative bg-gray-900 rounded-xl overflow-hidden" style={{ minHeight: "180px" }}>
-        <video
-          ref={videoRef}
-          autoPlay playsInline muted
+        <video ref={videoRef} autoPlay playsInline muted
           className={`w-full rounded-xl ${cameraOn ? "block" : "hidden"}`}
-          style={{ maxHeight: "210px", objectFit: "cover" }}
-        />
+          style={{ maxHeight: "210px", objectFit: "cover" }} />
         <canvas ref={canvasRef} className="hidden" />
 
         {!cameraOn && (
@@ -121,20 +102,12 @@ const CameraCapture = ({ onCapture, minCaptures = 2, maxCaptures = 3 }) => {
         )}
 
         {cameraOn && (
-          <>
-            {/* Capture count */}
-            <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2.5 py-1 rounded-full font-medium">
-              {captures.length}/{maxCaptures}
-            </div>
-            {/* Face guide overlay */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-32 h-40 border-2 border-white/50 rounded-full opacity-40"></div>
-            </div>
-          </>
+          <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">
+            {captures.length}/{maxCaptures}
+          </div>
         )}
       </div>
 
-      {/* Controls */}
       <div className="flex gap-2">
         {!cameraOn ? (
           <button type="button" onClick={startCamera}
@@ -143,19 +116,16 @@ const CameraCapture = ({ onCapture, minCaptures = 2, maxCaptures = 3 }) => {
           </button>
         ) : (
           <>
-            <button
-              type="button"
-              onClick={capturePhoto}
+            <button type="button" onClick={capturePhoto}
               disabled={captures.length >= maxCaptures || validating}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2.5 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-            >
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2.5 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2">
               {validating ? (
                 <>
                   <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
                   </svg>
-                  Checking face...
+                  Checking...
                 </>
               ) : <>📸 Capture ({captures.length}/{maxCaptures})</>}
             </button>
@@ -167,28 +137,23 @@ const CameraCapture = ({ onCapture, minCaptures = 2, maxCaptures = 3 }) => {
         )}
       </div>
 
-      {/* Error */}
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-600 text-xs px-3 py-2 rounded-xl">{error}</div>
       )}
 
-      {/* Thumbnails */}
       {captures.length > 0 && (
         <div>
           <p className="text-xs text-gray-500 font-medium mb-2">Captured Photos:</p>
           <div className="flex gap-2 flex-wrap">
             {captures.map((b64, i) => (
               <div key={i} className="relative">
-                <img
-                  src={`data:image/jpeg;base64,${b64}`}
-                  alt={`cap-${i}`}
-                  className={`w-16 h-16 object-cover rounded-lg border-2 ${faceStatus[i] ? "border-green-400" : "border-red-400"}`}
-                />
-                <span className={`absolute -top-1 -right-1 text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold shadow ${faceStatus[i] ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>
+                <img src={`data:image/jpeg;base64,${b64}`} alt={`cap-${i}`}
+                  className={`w-16 h-16 object-cover rounded-lg border-2 ${faceStatus[i] ? "border-green-400" : "border-red-400"}`} />
+                <span className={`absolute -top-1 -right-1 text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold ${faceStatus[i] ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>
                   {faceStatus[i] ? "✓" : "✗"}
                 </span>
                 <button type="button" onClick={() => removeCapture(i)}
-                  className="absolute -bottom-1 -right-1 bg-gray-700 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center hover:bg-red-600 transition-colors">
+                  className="absolute -bottom-1 -right-1 bg-gray-700 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center hover:bg-red-600">
                   ×
                 </button>
               </div>
@@ -197,12 +162,11 @@ const CameraCapture = ({ onCapture, minCaptures = 2, maxCaptures = 3 }) => {
         </div>
       )}
 
-      {/* Status */}
       <div className={`text-xs font-semibold px-3 py-2 rounded-xl flex items-center gap-2 ${
         isReady ? "bg-green-50 text-green-700 border border-green-200" : "bg-yellow-50 text-yellow-700 border border-yellow-200"
       }`}>
         {isReady
-          ? <>✅ Ready! {validCount} valid photo{validCount > 1 ? "s" : ""} captured</>
+          ? <>✅ Ready! {validCount} valid photo{validCount > 1 ? "s" : ""}</>
           : <>📸 Need {minCaptures - validCount} more valid photo{minCaptures - validCount > 1 ? "s" : ""}</>}
       </div>
     </div>
